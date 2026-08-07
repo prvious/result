@@ -1,0 +1,68 @@
+{
+    "name": "prvious/result",
+    "description": "A tiny typed Result value for explicit success and expected failure paths in PHP.",
+    "type": "library",
+    "keywords": [
+        "error-as-value",
+        "outcome",
+        "result",
+        "typed-result"
+    ],
+    "license": "MIT",
+    "require": {
+        "php": "^8.4"
+    },
+    "require-dev": {
+        "carthage-software/mago": "^1.46",
+        "orchestra/testbench": "^11.1",
+        "pestphp/pest": "^5.0",
+        "pestphp/pest-plugin-phpstan": "^5.0",
+        "pestphp/pest-plugin-rector": "^5.0",
+        "phpstan/phpstan": "^2.2",
+        "phpstan/phpstan-strict-rules": "^2.0",
+        "rector/rector": "^2.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "Prvious\\Result\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Prvious\\Result\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        },
+        "sort-packages": true
+    },
+    "scripts": {
+        "analyse": "phpstan analyse --memory-limit=-1",
+        "check": [
+            "@validate",
+            "@format:check",
+            "@lint",
+            "@mago:analyse",
+            "@analyse",
+            "@rector:check",
+            "@test"
+        ],
+        "fix": [
+            "@format",
+            "@rector"
+        ],
+        "format": "mago format",
+        "format:check": "mago format --check",
+        "lint": "mago lint",
+        "mago:analyse": "mago analyze",
+        "rector": "rector process",
+        "rector:check": "rector process --dry-run",
+        "test": "pest --colors=always",
+        "test:coverage": "pest --coverage --min=100",
+        "test:integration": "pest --testsuite=Integration --colors=always",
+        "test:unit": "pest --testsuite=Unit --colors=always",
+        "validate": "@composer validate --strict"
+    }
+}

@@ -1,0 +1,31 @@
+#:schema vendor/carthage-software/mago/schema.json
+
+version = "1"
+php-version = "8.4"
+
+[source]
+paths = ["src", "tests"]
+includes = ["vendor"]
+excludes = [".build/**"]
+
+# These temporary variables carry PHPStan's generic @var types before return.
+[linter.rules.inline-variable-return]
+exclude = ["src/Result.php"]
+
+# This exact boolean fixture is required to exercise both Result branches in Testbench.
+[linter.rules.no-boolean-flag-parameter]
+exclude = ["tests/Fixtures/LaravelAction.php"]
+
+# PHPStan type-test functions follow the required camelCase naming.
+[linter.rules.function-name]
+camel = true
+
+# Pest binds integration-test closures to TestCase at runtime; Mago sees TestCall instead.
+# PHPStan's assertType is an analyzer intrinsic shipped inside PHPStan's PHAR.
+[analyzer]
+ignore = [
+    { code = "non-documented-property", in = ["tests/Integration/LaravelIntegrationTest.php"] },
+    { code = "mixed-method-access", in = ["tests/Integration/LaravelIntegrationTest.php"] },
+    { code = "mixed-assignment", in = ["tests/Integration/LaravelIntegrationTest.php"] },
+    { code = "non-existent-function", in = ["tests/Type/ResultTypes.php"] },
+]

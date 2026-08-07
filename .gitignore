@@ -1,0 +1,8 @@
+/.build/
+/.phpunit.cache/
+/coverage/
+/vendor/
+
+composer.lock
+phpunit.xml
+phpstan.neon
