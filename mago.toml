@@ -8,24 +8,24 @@ paths = ["src", "tests"]
 includes = ["vendor"]
 excludes = [".build/**"]
 
-# These temporary variables carry PHPStan's generic @var types before return.
-[linter.rules.inline-variable-return]
-exclude = ["src/Result.php"]
-
-# This exact boolean fixture is required to exercise both Result branches in Testbench.
+# This exact boolean type test verifies Ok/Err action return compatibility.
 [linter.rules.no-boolean-flag-parameter]
-exclude = ["tests/Fixtures/LaravelAction.php"]
+exclude = ["tests/Type/ResultTypes.php"]
+
+# These explicit else branches prove both PHPStan narrowing outcomes.
+[linter.rules.no-else-clause]
+exclude = ["tests/Type/ResultTypes.php"]
+
+# The required covariance type test keeps its parent and child fixtures together.
+[linter.rules.single-class-per-file]
+exclude = ["tests/Type/ResultTypes.php"]
 
 # PHPStan type-test functions follow the required camelCase naming.
 [linter.rules.function-name]
 camel = true
 
-# Pest binds integration-test closures to TestCase at runtime; Mago sees TestCall instead.
 # PHPStan's assertType is an analyzer intrinsic shipped inside PHPStan's PHAR.
 [analyzer]
 ignore = [
-    { code = "non-documented-property", in = ["tests/Integration/LaravelIntegrationTest.php"] },
-    { code = "mixed-method-access", in = ["tests/Integration/LaravelIntegrationTest.php"] },
-    { code = "mixed-assignment", in = ["tests/Integration/LaravelIntegrationTest.php"] },
     { code = "non-existent-function", in = ["tests/Type/ResultTypes.php"] },
 ]

@@ -5,87 +5,127 @@ declare(strict_types=1);
 namespace Prvious\Result;
 
 /**
- * @template-covariant TSuccess
- * @template-covariant TFailure
+ * @template-covariant TValue
+ * @template-covariant TError
+ *
+ * @phpstan-sealed Ok|Err
  */
-final readonly class Result
+abstract readonly class Result
 {
-    private function __construct(
-        private bool $successful,
-        private mixed $payload,
-    ) {}
-
     /**
-     * @template TValue
+     * @template TOk
      *
-     * @param TValue $value
+     * @param TOk $value
      *
-     * @return self<TValue, never>
+     * @return Ok<TOk>
      */
-    public static function success(mixed $value): self
+    final public static function ok(mixed $value): Ok
     {
-        /** @var self<TValue, never> $result */
-        $result = new self(successful: true, payload: $value);
-
-        return $result;
+        return new Ok($value);
     }
 
     /**
-     * @template TError
+     * @template TErr
      *
-     * @param TError $error
+     * @param TErr $error
      *
-     * @return self<never, TError>
+     * @return Err<TErr>
      */
-    public static function failure(mixed $error): self
+    final public static function err(mixed $error): Err
     {
-        /** @var self<never, TError> $result */
-        $result = new self(successful: false, payload: $error);
-
-        return $result;
-    }
-
-    public function isSuccess(): bool
-    {
-        return $this->successful;
-    }
-
-    public function isFailure(): bool
-    {
-        return !$this->successful;
+        return new Err($error);
     }
 
     /**
-     * @return TSuccess
-     *
-     * @throws InvalidResultAccess
+     * @phpstan-assert-if-true Ok<TValue> $this
+     * @phpstan-assert-if-false Err<TError> $this
      */
-    public function value(): mixed
+    abstract public function isOk(): bool;
+
+    /**
+     * @phpstan-assert-if-true Err<TError> $this
+     * @phpstan-assert-if-false Ok<TValue> $this
+     */
+    abstract public function isErr(): bool;
+
+    /**
+     * @return TValue
+     *
+     * @throws Panic
+     */
+    abstract public function unwrap(): mixed;
+
+    /**
+     * @return TError
+     *
+     * @throws Panic
+     */
+    abstract public function error(): mixed;
+
+    /**
+     * @template TOkResult
+     * @template TErrResult
+     *
+     * @param callable(TValue): TOkResult $ok
+     * @param callable(TError): TErrResult $err
+     *
+     * @return TOkResult|TErrResult
+     */
+    final public function match(callable $ok, callable $err): mixed
     {
-        if ($this->isFailure()) {
-            throw InvalidResultAccess::valueFromFailure();
+        if ($this->isOk()) {
+            return $ok($this->unwrap());
         }
 
-        /** @var TSuccess $value */
-        $value = $this->payload;
-
-        return $value;
+        return $err($this->error());
     }
 
     /**
-     * @return TFailure
+     * @template TMapped
      *
-     * @throws InvalidResultAccess
+     * @param callable(TValue): TMapped $callback
+     *
+     * @return Result<TMapped, TError>
      */
-    public function error(): mixed
+    final public function map(callable $callback): Result
     {
-        if ($this->isSuccess()) {
-            throw InvalidResultAccess::errorFromSuccess();
+        if ($this->isErr()) {
+            return $this;
         }
 
-        /** @var TFailure $error */
-        $error = $this->payload;
+        return self::ok($callback($this->unwrap()));
+    }
 
-        return $error;
+    /**
+     * @template TMappedError
+     *
+     * @param callable(TError): TMappedError $callback
+     *
+     * @return Result<TValue, TMappedError>
+     */
+    final public function mapError(callable $callback): Result
+    {
+        if ($this->isOk()) {
+            return $this;
+        }
+
+        return self::err($callback($this->error()));
+    }
+
+    /**
+     * @template TNextValue
+     * @template TNextError
+     *
+     * @param callable(TValue): Result<TNextValue, TNextError> $callback
+     *
+     * @return Result<TNextValue, TError|TNextError>
+     */
+    final public function andThen(callable $callback): Result
+    {
+        if ($this->isErr()) {
+            return $this;
+        }
+
+        return $callback($this->unwrap());
     }
 }

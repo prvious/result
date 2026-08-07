@@ -1,20 +1,20 @@
 # Result
 
-## What the package does
+[![CI](https://img.shields.io/github/actions/workflow/status/prvious/result/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/prvious/result/actions/workflows/ci.yml)
+[![PHP](https://img.shields.io/badge/PHP-%5E8.4-777BB4?style=flat-square&logo=php&logoColor=white)](https://packagist.org/packages/prvious/result)
+[![License](https://img.shields.io/github/license/prvious/result?style=flat-square)](LICENSE.md)
 
-`prvious/result` is a tiny, framework-agnostic value object for returning an explicit success or an expected failure from PHP application code. A `Result<TSuccess, TFailure>` contains exactly one tagged payload, so either branch may hold any PHP value, including `null`.
+A tiny, typed way to return either a value or an expected error—without turning normal control flow into exceptions.
 
-The package uses PHPDoc generics because PHP does not have native generic classes. PHPStan or another compatible static analyzer provides generic type inference for the success and failure payloads.
+```text
+Result<TValue, TError>
+├── Ok<TValue>
+└── Err<TError>
+```
 
-## Requirements
-
-- PHP 8.4 or newer
-
-The package has no runtime dependency other than PHP. In particular, it has no Laravel runtime dependency and does not depend on Spatie Laravel Data.
+PHP 8.4+. No runtime dependencies. Framework agnostic. Friendly to PHPStan and other analyzers that understand PHPDoc generics.
 
 ## Installation
-
-Install the package with Composer:
 
 ```shell
 composer require prvious/result
@@ -30,187 +30,127 @@ declare(strict_types=1);
 use Prvious\Result\Result;
 
 /**
- * @return Result<string, RegistrationFailure>
+ * @return Result<float, string>
  */
-function register(bool $emailAvailable): Result
+function divide(float $dividend, float $divisor): Result
 {
-    if (! $emailAvailable) {
-        return Result::failure(RegistrationFailure::EmailTaken);
+    if ($divisor === 0.0) {
+        return Result::err('Cannot divide by zero.');
     }
 
-    return Result::success('user-123');
-}
-
-enum RegistrationFailure
-{
-    case EmailTaken;
+    return Result::ok($dividend / $divisor);
 }
 ```
 
-`Result::success()` infers the type of its success value, and `Result::failure()` infers the type of its failure value. Application-specific failure enums and data objects remain in your application.
+The return type describes both possible outcomes: a `float` when the operation succeeds, or a `string` when it cannot be completed.
 
-Spatie Laravel Data objects can be used as success payloads like any other value, but this package does not depend on Spatie Laravel Data.
-
-## Laravel action example
-
-An action-specific enum keeps the expected rejection paths explicit:
+Use `match()` to handle both:
 
 ```php
-enum MergeEntriesFailure
-{
-    case DifferentAccount;
-    case SameEntry;
-}
-```
-
-The action can then return either its successful data object or that enum:
-
-```php
-<?php
-
-declare(strict_types=1);
-
-namespace App\Actions\Entries;
-
-use App\Data\Entries\MergedEntryData;
-use App\Data\Entries\MergeEntriesData;
-use App\Models\Entry;
-use Illuminate\Support\Facades\DB;
-use Prvious\Result\Result;
-
-final readonly class MergeEntries
-{
-    /**
-     * @return Result<MergedEntryData, MergeEntriesFailure>
-     */
-    public function handle(MergeEntriesData $data): Result
-    {
-        $source = Entry::query()->findOrFail($data->sourceEntryId);
-        $target = Entry::query()->findOrFail($data->targetEntryId);
-
-        if ($source->is($target)) {
-            return Result::failure(MergeEntriesFailure::SameEntry);
-        }
-
-        if ($source->account_id !== $target->account_id) {
-            return Result::failure(MergeEntriesFailure::DifferentAccount);
-        }
-
-        return DB::transaction(function () use ($source, $target): Result {
-            $target->increment('amount', $source->amount);
-
-            $source->update([
-                'merged_into_id' => $target->id,
-            ]);
-
-            return Result::success(
-                new MergedEntryData(
-                    entryId: $target->id,
-                    amount: $target->fresh()->amount,
-                ),
-            );
-        });
-    }
-}
-```
-
-This package does not automatically roll back database transactions. Check expected rejection paths before mutation, as above, or let unexpected exceptions escape the transaction so the framework can roll it back.
-
-PHP 8.5 applications may place `#[\NoDiscard]` on action methods that return a `Result`, causing PHP to warn when a result is accidentally ignored:
-
-```php
-#[\NoDiscard]
-public function handle(MergeEntriesData $data): Result
-{
-    // ...
-}
-```
-
-The attribute belongs on application code when its minimum PHP version permits it; the package itself supports PHP 8.4.
-
-## Handling a result at an application boundary
-
-Interpret the result in a controller, command, job, or another application boundary:
-
-```php
-$result = $mergeEntries->handle(
-    MergeEntriesData::from($request),
+$output = divide(10, 2)->match(
+    ok: fn (float $value): string => "Result: {$value}",
+    err: fn (string $error): string => "...",
 );
-
-if ($result->isFailure()) {
-    return match ($result->error()) {
-        MergeEntriesFailure::SameEntry => back()->withErrors([
-            'targetEntryId' => 'An entry cannot be merged into itself.',
-        ]),
-
-        MergeEntriesFailure::DifferentAccount => back()->withErrors([
-            'targetEntryId' => 'Both entries must belong to the same account.',
-        ]),
-    };
-}
-
-$entry = $result->value();
-
-return redirect()->route('entries.show', $entry->entryId);
 ```
 
-Calling `value()` on a failure or `error()` on a success throws `InvalidResultAccess`. That exception represents programmer misuse of the result branch, not a business failure.
+Exactly one callback runs, and its value is returned directly—it is not wrapped in another `Result`.
 
-## Failure values with additional data
-
-When a failure needs context, use a typed object, optionally behind an application-owned interface, rather than an untyped associative array:
+## Creating results
 
 ```php
-interface TransferFailure
-{
-}
+$ok = Result::ok('created');
+$err = Result::err('Email is already registered.');
 ```
+
+Both variants accept any PHP value, including objects, enums, arrays, scalars, `Throwable` instances, and `null`.
+
+## API at a glance
+
+| Method | On `Ok` | On `Err` |
+| --- | --- | --- |
+| `isOk()` | `true` | `false` |
+| `isErr()` | `false` | `true` |
+| `unwrap()` | Returns the value | Throws `Panic` |
+| `error()` | Throws `Panic` | Returns the error |
+| `match($ok, $err)` | Calls `$ok` | Calls `$err` |
+| `map($callback)` | Transforms the value | Preserves the error |
+| `mapError($callback)` | Preserves the value | Transforms the error |
+| `andThen($callback)` | Runs the next `Result` operation | Short-circuits |
+
+PHPStan narrows the variant after `isOk()` or `isErr()`:
 
 ```php
-enum BasicTransferFailure implements TransferFailure
-{
-    case AccountClosed;
+if ($result->isOk()) {
+    $value = $result->unwrap();
+}
+
+if ($result->isErr()) {
+    $error = $result->error();
 }
 ```
+
+## Transforming and chaining
+
+Use `map()` when the callback returns a plain value:
 
 ```php
-final readonly class InsufficientBalance implements TransferFailure
-{
-    public function __construct(
-        public int $requiredCents,
-        public int $availableCents,
-    ) {}
-}
+$result = divide(10, 2)->map(
+    fn (float $value): string => number_format($value, 2),
+);
 ```
 
-An action may then declare `Result<TransferReceipt, TransferFailure>` while returning either `BasicTransferFailure` or `InsufficientBalance` from its expected failure paths.
+Use `mapError()` to translate an error into the vocabulary of the current operation:
 
-## Exceptions versus failures
+```php
+$result = divide(10, 0)->mapError(
+    fn (string $error): array => ['message' => $error],
+);
+```
 
-Result failures are intended for expected branches that callers should handle, such as a rejected transfer or an unavailable username. These failures are values and do not throw.
+This changes `Result<float, string>` into `Result<float, array{message: string}>` without touching an existing `Ok`.
 
-Unexpected database, network, filesystem, and other infrastructure errors should continue to throw exceptions. `InvalidResultAccess` is also an exception because accessing the wrong branch is programmer misuse rather than an expected application outcome.
+Use `andThen()` when the next callback already returns a `Result`:
+
+```php
+$result = divide(100, 5)
+    ->andThen(
+        fn (float $value): Result => divide($value, 2),
+    );
+```
+
+The first `Err` stops the chain. `andThen()` returns the callback's result directly, so it never creates a nested `Result<Result<...>>`.
+
+## About `Panic`
+
+`Panic` means the Result API was used incorrectly: `unwrap()` was called on an `Err`, or `error()` was called on an `Ok`.
+
+It extends `LogicException`, exposes the wrongly accessed payload through `$panic->payload`, and is not a third Result variant. Do not catch it for business flow—use `match()`, `isOk()`, or `isErr()` instead.
+
+If an incorrectly unwrapped `Err` contains a `Throwable`, that throwable is preserved as `$panic->getPrevious()`.
+
+## Results are not exception replacement
+
+Use `Err` for outcomes the caller is expected to handle: a duplicate email, an expired invite, a declined payment, or a missing domain object.
+
+Unexpected database, network, filesystem, and provider failures should normally remain exceptions. This package never catches exceptions thrown inside `match()`, `map()`, `mapError()`, or `andThen()`, so reporting, retries, and transaction rollbacks continue to work normally.
+
+## Frameworks and data objects
+
+The package has no Laravel integration, service provider, or configuration. A Laravel action can return a `Result` in the same way, and an `Ok` may contain a Spatie Data object without making `spatie/laravel-data` a package dependency.
+
+Applications running PHP 8.5 may add `#[\NoDiscard]` to methods returning `Result` to warn when the outcome is ignored. The package itself supports PHP 8.4, so it does not apply that attribute.
 
 ## Development
 
-Install development dependencies with `composer install`, then use:
-
 ```shell
-composer test
-composer test:coverage
-composer analyse
-composer format
-composer format:check
-composer lint
-composer mago:analyse
-composer rector
-composer rector:check
+composer install
 composer check
+composer test:coverage
 composer fix
 ```
 
-The coverage command enforces 100 percent source coverage. `composer check` runs the complete validation, formatting, linting, static-analysis, Rector, and test suite.
+`composer check` runs Composer validation, formatting, linting, static analysis, Rector, and the test suite. Coverage is enforced at 100 percent.
 
 ## License
 
-This package is open-source software licensed under the [MIT License](LICENSE.md).
+Result is open-source software licensed under the [MIT License](LICENSE.md).

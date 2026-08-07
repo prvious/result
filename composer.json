@@ -1,10 +1,11 @@
 {
     "name": "prvious/result",
-    "description": "A tiny typed Result value for explicit success and expected failure paths in PHP.",
+    "description": "A tiny typed Result value with explicit Ok and Err outcomes for PHP.",
     "type": "library",
     "keywords": [
         "error-as-value",
-        "outcome",
+        "err",
+        "ok",
         "result",
         "typed-result"
     ],
@@ -14,7 +15,6 @@
     },
     "require-dev": {
         "carthage-software/mago": "^1.46",
-        "orchestra/testbench": "^11.1",
         "pestphp/pest": "^5.0",
         "pestphp/pest-plugin-phpstan": "^5.0",
         "pestphp/pest-plugin-rector": "^5.0",
@@ -61,7 +61,6 @@
         "rector:check": "rector process --dry-run",
         "test": "pest --colors=always",
         "test:coverage": "pest --coverage --min=100",
-        "test:integration": "pest --testsuite=Integration --colors=always",
         "test:unit": "pest --testsuite=Unit --colors=always",
         "validate": "@composer validate --strict"
     }

@@ -2,56 +2,62 @@
 
 declare(strict_types=1);
 
-use Prvious\Result\InvalidResultAccess;
+use Prvious\Result\Err;
+use Prvious\Result\Ok;
 use Prvious\Result\Result;
-use Prvious\Result\Tests\Fixtures\SampleFailure;
+use Prvious\Result\Tests\Fixtures\SampleError;
+
+/**
+ * @return Result<mixed, never>
+ */
+function resultTestOk(mixed $value): Result
+{
+    return Result::ok($value);
+}
+
+/**
+ * @return Result<never, mixed>
+ */
+function resultTestErr(mixed $error): Result
+{
+    return Result::err($error);
+}
 
 function resultTestNullPayload(): mixed
 {
     return null;
 }
 
-it('contains a successful value', function (): void {
+it('constructs and inspects an Ok result', function (): void {
     $value = new stdClass();
-    $result = Result::success($value);
+    $result = resultTestOk($value);
 
-    expect($result->isSuccess())
+    expect($result)
+        ->toBeInstanceOf(Ok::class)
+        ->and($result->isOk())
         ->toBeTrue()
-        ->and($result->isFailure())
+        ->and($result->isErr())
         ->toBeFalse()
-        ->and($result->value())
+        ->and($result->unwrap())
         ->toBe($value);
 });
 
-it('contains a failure value', function (): void {
-    $result = Result::failure(SampleFailure::Rejected);
+it('constructs and inspects an Err result', function (): void {
+    $result = resultTestErr(SampleError::Rejected);
 
-    expect($result->isSuccess())
+    expect($result)
+        ->toBeInstanceOf(Err::class)
+        ->and($result->isOk())
         ->toBeFalse()
-        ->and($result->isFailure())
+        ->and($result->isErr())
         ->toBeTrue()
         ->and($result->error())
-        ->toBe(SampleFailure::Rejected);
+        ->toBe(SampleError::Rejected);
 });
 
-it('uses the branch tag rather than nullability', function (): void {
-    $success = Result::success(resultTestNullPayload());
-    $failure = Result::failure(resultTestNullPayload());
+it('accepts null in either variant', function (): void {
+    $ok = resultTestOk(resultTestNullPayload());
+    $err = resultTestErr(resultTestNullPayload());
 
-    expect($success->isSuccess())
-        ->toBeTrue()
-        ->and($success->value())
-        ->toBeNull()
-        ->and($failure->isFailure())
-        ->toBeTrue()
-        ->and($failure->error())
-        ->toBeNull();
+    expect($ok->unwrap())->toBeNull()->and($err->error())->toBeNull();
 });
-
-it('rejects value access on a failed result', function (): void {
-    Result::failure(SampleFailure::Missing)->value();
-})->throws(InvalidResultAccess::class, 'Cannot retrieve the success value from a failed result.');
-
-it('rejects error access on a successful result', function (): void {
-    Result::success('created')->error();
-})->throws(InvalidResultAccess::class, 'Cannot retrieve the failure value from a successful result.');
