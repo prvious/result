@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prvious Result Development"
+  short_description: "Build typed PHP flows with Prvious Result"
+  default_prompt: "Use $prvious-result-development to implement a typed Laravel action with explicit Ok and Err outcomes."
