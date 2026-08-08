@@ -41,13 +41,16 @@
     "scripts": {
         "analyse": "phpstan analyse --memory-limit=-1",
         "check": [
+            "@check:quality",
+            "@test"
+        ],
+        "check:quality": [
             "@validate",
             "@format:check",
             "@lint",
             "@mago:analyse",
             "@analyse",
-            "@rector:check",
-            "@test"
+            "@rector:check"
         ],
         "fix": [
             "@format",

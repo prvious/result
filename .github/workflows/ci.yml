@@ -40,7 +40,7 @@ jobs:
           dependency-versions: highest
 
       - name: Run quality checks
-        run: composer check
+        run: composer check:quality
 
   tests:
     name: PHP ${{ matrix.php }} / ${{ matrix.dependencies }}
@@ -53,10 +53,16 @@ jobs:
         include:
           - php: "8.4"
             dependencies: lowest
+            coverage: none
+            command: composer test
           - php: "8.4"
             dependencies: highest
+            coverage: pcov
+            command: composer test:coverage
           - php: "8.5"
             dependencies: highest
+            coverage: none
+            command: composer test
 
     steps:
       - name: Check out the repository
@@ -66,7 +72,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          coverage: none
+          coverage: ${{ matrix.coverage }}
           tools: composer:v2
 
       - name: Install dependencies
@@ -75,28 +81,4 @@ jobs:
           dependency-versions: ${{ matrix.dependencies }}
 
       - name: Run tests
-        run: composer test
-
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v7
-
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.4"
-          coverage: pcov
-          tools: composer:v2
-
-      - name: Install dependencies
-        uses: ramsey/composer-install@v4
-        with:
-          dependency-versions: highest
-
-      - name: Enforce coverage
-        run: composer test:coverage
+        run: ${{ matrix.command }}
