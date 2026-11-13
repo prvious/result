@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prvious Result 0.2 Upgrade"
+  short_description: "Migrate prvious/result 0.1 callbacks to guard clauses"
+  default_prompt: "Use $prvious-result-upgrade-0-2 to upgrade this project from prvious/result 0.1 to 0.2."
