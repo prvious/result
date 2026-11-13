@@ -44,16 +44,19 @@ function divide(float $dividend, float $divisor): Result
 
 The return type describes both possible outcomes: a `float` when the operation succeeds, or a `string` when it cannot be completed.
 
-Use `match()` to handle both:
+Check the result, handle the error with an early return, then read the value:
 
 ```php
-$output = divide(10, 2)->match(
-    ok: fn (float $value): string => "Result: {$value}",
-    err: fn (string $error): string => "...",
-);
+$result = divide(10, 2);
+
+if ($result->isErr()) {
+    return "Could not divide: {$result->error()}";
+}
+
+return "Result: {$result->unwrap()}";
 ```
 
-Exactly one callback runs, and its value is returned directly—it is not wrapped in another `Result`.
+Always check `isErr()` or `isOk()` before calling `unwrap()` or `error()`. Reading the wrong side throws a [`Panic`](#about-panic).
 
 ## Creating results
 
@@ -72,59 +75,62 @@ Both variants accept any PHP value, including objects, enums, arrays, scalars, `
 | `isErr()` | `false` | `true` |
 | `unwrap()` | Returns the value | Throws `Panic` |
 | `error()` | Throws `Panic` | Returns the error |
-| `match($ok, $err)` | Calls `$ok` | Calls `$err` |
-| `map($callback)` | Transforms the value | Preserves the error |
-| `mapError($callback)` | Preserves the value | Transforms the error |
-| `andThen($callback)` | Runs the next `Result` operation | Short-circuits |
 
-PHPStan narrows the variant after `isOk()` or `isErr()`:
+That's the whole API. There are no callback methods; results are handled with plain control flow.
+
+PHPStan narrows the variant after `isOk()` or `isErr()`, including after an early return:
 
 ```php
-if ($result->isOk()) {
-    $value = $result->unwrap();
-}
-
 if ($result->isErr()) {
-    $error = $result->error();
+    return $result->error();
+}
+
+$value = $result->unwrap();
+```
+
+## Propagating and translating errors
+
+To pass an error up unchanged, return the `Err` itself. Give each fallible step its own check:
+
+```php
+/**
+ * @return Result<string, string>
+ */
+function halfOfQuotient(float $dividend, float $divisor): Result
+{
+    $quotient = divide($dividend, $divisor);
+
+    if ($quotient->isErr()) {
+        return $quotient;
+    }
+
+    $half = divide($quotient->unwrap(), 2);
+
+    if ($half->isErr()) {
+        return $half;
+    }
+
+    return Result::ok(number_format($half->unwrap(), 2));
 }
 ```
 
-## Transforming and chaining
+An `Err` has no value, so it fits any `Result` with the same error type.
 
-Use `map()` when the callback returns a plain value:
-
-```php
-$result = divide(10, 2)->map(
-    fn (float $value): string => number_format($value, 2),
-);
-```
-
-Use `mapError()` to translate an error into the vocabulary of the current operation:
+To translate an error into the vocabulary of the current operation, wrap it inside the check:
 
 ```php
-$result = divide(10, 0)->mapError(
-    fn (string $error): array => ['message' => $error],
-);
+if ($result->isErr()) {
+    return Result::err(['message' => $result->error()]);
+}
 ```
-
-This changes `Result<float, string>` into `Result<float, array{message: string}>` without touching an existing `Ok`.
-
-Use `andThen()` when the next callback already returns a `Result`:
-
-```php
-$result = divide(100, 5)
-    ->andThen(
-        fn (float $value): Result => divide($value, 2),
-    );
-```
-
-The first `Err` stops the chain. `andThen()` returns the callback's result directly, so it never creates a nested `Result<Result<...>>`.
 
 ## About `Panic`
 
 `Panic` means the Result API was used incorrectly: `unwrap()` was called on an `Err`, or `error()` was called on an `Ok`.
 
-It extends `LogicException`, exposes the wrongly accessed payload through `$panic->payload`, and is not a third Result variant. Do not catch it for business flow—use `match()`, `isOk()`, or `isErr()` instead.
+It extends `LogicException`, exposes the wrongly accessed payload through `$panic->payload`, and is not a third Result variant. Do not catch it for business flow—use `isOk()` or `isErr()` instead.
+
+Static analysis does not flag an unchecked `unwrap()`, so test the error path of your code as well as the success path.
 
 If an incorrectly unwrapped `Err` contains a `Throwable`, that throwable is preserved as `$panic->getPrevious()`.
 
@@ -132,13 +138,24 @@ If an incorrectly unwrapped `Err` contains a `Throwable`, that throwable is pres
 
 Use `Err` for outcomes the caller is expected to handle: a duplicate email, an expired invite, a declined payment, or a missing domain object.
 
-Unexpected database, network, filesystem, and provider failures should normally remain exceptions. This package never catches exceptions thrown inside `match()`, `map()`, `mapError()`, or `andThen()`, so reporting, retries, and transaction rollbacks continue to work normally.
+Unexpected database, network, filesystem, and provider failures should normally remain exceptions, so reporting, retries, and transaction rollbacks continue to work normally.
 
 ## Frameworks and data objects
 
 The package has no Laravel integration, service provider, or configuration. A Laravel action can return a `Result` in the same way, and an `Ok` may contain a Spatie Data object without making `spatie/laravel-data` a package dependency.
 
 Applications running PHP 8.5 may add `#[\NoDiscard]` to methods returning `Result` to warn when the outcome is ignored. The package itself supports PHP 8.4, so it does not apply that attribute.
+
+## Upgrading from 0.1
+
+0.2 removes `match()`, `map()`, `mapError()`, and `andThen()`. Replace each one with a check and an early return:
+
+- `match()`: handle the error in an `if ($result->isErr())` block that returns, then handle the value.
+- `map()`: after the check, return `Result::ok(...)` with the transformed `$result->unwrap()`.
+- `mapError()`: inside the check, return `Result::err(...)` with the transformed `$result->error()`.
+- `andThen()`: after the check, return the next step called with `$result->unwrap()`.
+
+The replacements only use methods that exist in both versions, so rewrite your code first and then change your constraint to `^0.2`. Projects using [Laravel Boost](https://github.com/laravel/boost) get a `prvious-result-upgrade-0-2` skill that walks AI agents through the rewrite.
 
 ## Development
 
