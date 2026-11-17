@@ -1,11 +1,13 @@
 ---
 name: prvious-result-development
-description: Use when writing, reviewing, or refactoring PHP code with the prvious/result package. Covers creating typed Ok and Err outcomes, declaring Result generics for PHPStan, matching and narrowing results, transforming values and errors, chaining operations, handling Panic correctly, testing result-based code, and using Result in Laravel actions, controllers, jobs, and services. Trigger for Prvious\Result, Result::ok(), Result::err(), match(), map(), mapError(), and andThen().
+description: Use when writing, reviewing, or refactoring PHP code with the prvious/result package. Covers creating typed Ok and Err outcomes, declaring Result generics for PHPStan, checking results with isOk() and isErr() before reading them, propagating and translating errors with guard clauses, handling Panic correctly, testing result-based code, and using Result in Laravel actions, controllers, jobs, and services. Trigger for Prvious\Result, Result::ok(), Result::err(), isOk(), isErr(), unwrap(), and error().
 ---
 
 # Prvious Result Development
 
 Use `prvious/result` for expected, caller-actionable failures while keeping successful and failed return types explicit. The package requires PHP 8.4+, has no runtime dependencies, and does not provide Laravel configuration, a facade, a service provider, or container bindings.
+
+The whole API is `Result::ok()`, `Result::err()`, `isOk()`, `isErr()`, `unwrap()`, and `error()`. There are no callback methods: results are handled with plain control flow.
 
 ## Create Typed Results
 
@@ -42,55 +44,67 @@ Prefer precise domain objects, enums, array shapes, or scalar types for `TValue`
 
 Return `Err` for outcomes callers are expected to handle, such as a duplicate email, expired invitation, declined payment, or missing domain object.
 
-Allow unexpected database, filesystem, network, and provider failures to remain exceptions unless the application has an explicit recovery policy. Do not catch every `Throwable` and convert it to `Err`; exceptions thrown inside `match()`, `map()`, `mapError()`, or `andThen()` intentionally bubble unchanged.
+Allow unexpected database, filesystem, network, and provider failures to remain exceptions unless the application has an explicit recovery policy. Do not catch every `Throwable` and convert it to `Err`.
 
-## Consume Results Safely
+## Check Before You Read
 
-Use `match()` at boundaries that must handle both variants, such as controllers, console commands, listeners, or jobs. Name the callbacks `ok` and `err` for clarity. `match()` returns the selected callback's raw value, not another `Result`.
-
-```php
-return $registerUser($attributes)->match(
-    ok: fn (User $user): RedirectResponse => redirect()->route('users.show', $user),
-    err: fn (RegistrationError $error): RedirectResponse => back()->withErrors([
-        'email' => match ($error) {
-            RegistrationError::EmailTaken => 'That email is already registered.',
-        },
-    ]),
-);
-```
-
-Use `isOk()` or `isErr()` when control flow is clearer with an early return. PHPStan narrows the variant after either check.
+Assign the result to a variable, handle the `Err` with an early return, then read the value on the success path:
 
 ```php
-$result = $findUser($id);
+$result = $registerUser($attributes);
 
 if ($result->isErr()) {
-    return null;
+    return back()->withErrors([
+        'email' => match ($result->error()) {
+            RegistrationError::EmailTaken => 'That email is already registered.',
+        },
+    ]);
 }
 
-$user = $result->unwrap();
+return redirect()->route('users.show', $result->unwrap());
 ```
 
-Call `unwrap()` only on a known or narrowed `Ok`. Call `error()` only on a known or narrowed `Err`.
+Rules:
 
-## Transform and Compose
-
-Select the operation by what the callback returns:
-
-| Intent | Method | Callback returns | Behavior on the other variant |
-| --- | --- | --- | --- |
-| Transform a success | `map()` | Plain value | Preserve the existing `Err` |
-| Transform an error | `mapError()` | Plain error | Preserve the existing `Ok` |
-| Continue with a fallible operation | `andThen()` | Another `Result` | Preserve the existing `Err` |
-| Finish by handling both variants | `match()` | Any terminal value | Run exactly one branch |
+- Never call `unwrap()` on a result that has not been checked with `isErr()` or `isOk()`. An unchecked `unwrap()` passes static analysis but throws `Panic` the first time the expected error happens.
+- Only call `error()` inside an `isErr()` branch (or after `isOk()` returned `false`).
+- Prefer `isErr()` with an early return over `if/else`. Use `if/else` or a ternary only when both branches must produce a value and execution continues afterwards:
 
 ```php
-$summary = $loadOrder($id)
-    ->map(fn (Order $order): OrderData => OrderData::from($order))
-    ->mapError(fn (OrderLookupError $error): ApiError => ApiError::from($error));
+$label = $result->isOk() ? $result->unwrap()->number : 'Unavailable';
 ```
 
-Use `andThen()` when the next operation already returns a `Result`:
+PHPStan narrows the variant after either check, including after an early return.
+
+## Propagate, Translate, and Sequence Errors
+
+To pass an error up unchanged, return the narrowed `Err` itself. It satisfies any `Result` with the same error type, whatever the value type:
+
+```php
+/**
+ * @return Result<OrderData, OrderLookupError>
+ */
+public function summary(int $id): Result
+{
+    $result = $this->loadOrder($id);
+
+    if ($result->isErr()) {
+        return $result;
+    }
+
+    return Result::ok(OrderData::from($result->unwrap()));
+}
+```
+
+To expose a different error type, translate inside the guard:
+
+```php
+if ($result->isErr()) {
+    return Result::err(ApiError::from($result->error()));
+}
+```
+
+To run several fallible steps in sequence, give each step its own variable and its own check:
 
 ```php
 /**
@@ -98,25 +112,27 @@ Use `andThen()` when the next operation already returns a `Result`:
  */
 function checkout(Cart $cart): Result
 {
-    return validateCart($cart)->andThen(
-        fn (ValidatedCart $validated): Result => chargeCart($validated),
-    );
+    $validated = validateCart($cart);
+
+    if ($validated->isErr()) {
+        return $validated;
+    }
+
+    return chargeCart($validated->unwrap());
 }
 ```
 
-`andThen()` returns the callback's result directly and unions the previous and next error types. Use `mapError()` before or after chaining when the public method should expose one domain-level error type.
-
-Never use `map()` for a callback that returns `Result`; that creates a nested `Result<Result<...>, ...>`. Use `andThen()` instead.
+Do not wrap an existing result with `Result::ok()`; that creates a nested `Result<Result<...>, ...>`. Return it directly.
 
 ## Treat Panic as Misuse
 
 `Prvious\Result\Panic` is a `LogicException` raised by `unwrap()` on `Err` or `error()` on `Ok`. It is not a third outcome and must not be used for business flow.
 
-Do not catch `Panic` to recover from expected failures. Branch with `match()`, `isOk()`, or `isErr()` instead. When an incorrectly unwrapped `Err` contains a `Throwable`, `Panic` exposes it through both `$panic->payload` and `$panic->getPrevious()` for diagnosis.
+Do not catch `Panic` to recover from expected failures. Branch with `isOk()` or `isErr()` instead. When an incorrectly unwrapped `Err` contains a `Throwable`, `Panic` exposes it through both `$panic->payload` and `$panic->getPrevious()` for diagnosis.
 
 ## Test Both Variants
 
-Cover the successful and expected-error paths. Assert the variant before accessing its payload, and verify short-circuiting when callback execution matters.
+Cover the successful and expected-error paths. Testing the error path is what catches an unchecked `unwrap()` in projects without static analysis. Assert the variant before accessing its payload.
 
 ```php
 use Prvious\Result\Err;
@@ -145,7 +161,8 @@ Let the application's existing Pest or PHPUnit conventions determine test placem
 
 - Do not return `null`, `false`, or an undocumented union for a failure already represented by `Err`.
 - Do not call `unwrap()` merely to avoid handling an `Err`.
-- Do not wrap an existing result with `Result::ok()`; return it directly or compose with `andThen()`.
+- Do not write helpers, traits, or macros that add callback methods such as `match()`, `map()`, or `andThen()` to results; use plain control flow.
 - Do not catch `Panic` as part of normal application behavior.
 - Do not turn unexpected infrastructure exceptions into generic `Err` values by default.
 - Do not invent Laravel-specific package APIs; use `Result` directly in ordinary PHP classes.
+- Code that still calls `match()`, `map()`, `mapError()`, or `andThen()` on a `Result` was written for 0.1; use the `prvious-result-upgrade-0-2` skill to rewrite it.

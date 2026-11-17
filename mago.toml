@@ -25,7 +25,12 @@ exclude = ["tests/Type/ResultTypes.php"]
 camel = true
 
 # PHPStan's assertType is an analyzer intrinsic shipped inside PHPStan's PHAR.
+# Mago does not apply the @phpstan-assert-if-* narrowing on isOk()/isErr(), so the
+# guard-clause type tests in this PHPStan-only file are verified by PHPStan alone.
 [analyzer]
 ignore = [
     { code = "non-existent-function", in = ["tests/Type/ResultTypes.php"] },
+    { code = "never-return", in = ["tests/Type/ResultTypes.php"] },
+    { code = "mixed-argument", in = ["tests/Type/ResultTypes.php"] },
+    { code = "invalid-return-statement", in = ["tests/Type/ResultTypes.php"] },
 ]

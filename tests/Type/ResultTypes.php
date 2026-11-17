@@ -27,11 +27,6 @@ function translateError(SampleError $error): OtherError
     };
 }
 
-function sampleErrorName(SampleError $error): string
-{
-    return $error->name;
-}
-
 function assertFactoryInference(string $value, SampleError $error): void
 {
     $ok = Result::ok($value);
@@ -88,57 +83,32 @@ function assertIsErrNarrowing(Result $result): void
 
 /**
  * @param Result<string, SampleError> $result
+ *
+ * @return Result<int, SampleError>
  */
-function assertMapInference(Result $result): void
+function assertGuardClausePropagatesErr(Result $result): Result
 {
-    $mapped = $result->map(resultTypeLength(...));
-
-    assertType('Prvious\Result\Result<int, Prvious\Result\Tests\Fixtures\SampleError>', $mapped);
-}
-
-/**
- * @param Result<string, SampleError> $result
- */
-function assertMapErrorInference(Result $result): void
-{
-    $mapped = $result->mapError(translateError(...));
-
-    assertType('Prvious\Result\Result<string, Prvious\Result\Tests\Fixtures\OtherError>', $mapped);
-}
-
-/**
- * @return Result<int, OtherError>
- */
-function nextAction(string $value): Result
-{
-    if ($value === '') {
-        return Result::err(OtherError::Empty);
+    if ($result->isErr()) {
+        return $result;
     }
 
-    return Result::ok(resultTypeLength($value));
+    assertType('Prvious\Result\Ok<string>', $result);
+
+    return Result::ok(resultTypeLength($result->unwrap()));
 }
 
 /**
  * @param Result<string, SampleError> $result
+ *
+ * @return Result<string, OtherError>
  */
-function assertAndThenInference(Result $result): void
+function assertGuardClauseTranslatesErr(Result $result): Result
 {
-    $chained = $result->andThen(nextAction(...));
+    if ($result->isErr()) {
+        return Result::err(translateError($result->error()));
+    }
 
-    assertType(
-        'Prvious\Result\Result<int, Prvious\Result\Tests\Fixtures\OtherError|Prvious\Result\Tests\Fixtures\SampleError>',
-        $chained,
-    );
-}
-
-/**
- * @param Result<string, SampleError> $result
- */
-function assertMatchInference(Result $result): void
-{
-    $matched = $result->match(ok: resultTypeLength(...), err: sampleErrorName(...));
-
-    assertType('int|string', $matched);
+    return $result;
 }
 
 /**
